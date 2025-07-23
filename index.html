@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   </head>
   <body>
-    <button onClick="()=>{history.push('/')}">首页</button>
+    <button onClick="history.push('/')">首页</button>
     <button onClick="history.push('/about')">关于我</button>
     <button onClick="history.replace('/xxx')">替换</button>
     <script>
@@ -29,14 +29,18 @@
         };
       }
 
-      function createCurrentLocation() {
+      function createCurrentLocation(base) {
         const { pathname, search, hash } = window.location;
+        const hasPos = base.indexOf('#') // 就是hash
+        if(hasPos > -1) {
+          return base.slice(1) || '/'
+        }
         return pathname + search + hash;
       }
 
-      function useHistoryStateNavigation() {
+      function useHistoryStateNavigation(base) {
         const currentLocation = {
-          value: createCurrentLocation(),
+          value: createCurrentLocation(base),
         };
 
         const historyState = {
@@ -53,10 +57,12 @@
         }
 
         function changeLocation(to, state, replace) {
+          const hasPos = base.indexOf('#');
+          const url = hasPos > -1 ? base + to: to
           window.history[replace ? "replaceState" : "pushState"](
             state,
             null,
-            to
+            url
           );
           historyState.value = state;
         }
@@ -102,10 +108,10 @@
       }
 
       // 前进后退的时候要更新historyState和currentLocation
-      function useHistoryListeners(historyState, currentLocation) {
+      function useHistoryListeners(base,historyState, currentLocation) {
         let listeners = []
         const popStateHandler = ({state}) => {
-        const to = createCurrentLocation() // 去哪
+        const to = createCurrentLocation(base) // 去哪
         const from = currentLocation.value; // 从哪来
         const fromState = historyState.value; // 从哪来时的状态
 
@@ -129,11 +135,11 @@
         }
       }
 
-      function createWebHistory() {
+      function createWebHistory(base=  '') {
         // 历史路由
-        const historyNavigation = useHistoryStateNavigation();
+        const historyNavigation = useHistoryStateNavigation(base);
         
-        const historyListeners = useHistoryListeners(historyNavigation.state,historyNavigation.location)
+        const historyListeners = useHistoryListeners(base,historyNavigation.state,historyNavigation.location)
 
         const routerHistory = Object.assign({}, historyNavigation, historyListeners);
 
@@ -152,7 +158,11 @@
         return routerHistory
       }
 
-      const history = createWebHistory();
+      function createWebHashHistory() {
+        return createWebHistory('#')
+      }
+
+      const history = createWebHashHistory();
       history.listen((to, from, {isBack}) => {
         console.log('路由变化了', '从', from,'到',to, isBack ? '后退' : '前进');
       });
