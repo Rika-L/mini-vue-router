@@ -33,6 +33,79 @@ const START_LOCATION_NORMALIZED = {
   matched: [], // 当前路径匹配到的记录
 }
 
+function useCallback() {
+  const handlers = []
+  function add(handler) {
+    handlers.push(handler)
+  }
+
+  return {
+    add,
+    list: () => handlers,
+  }
+}
+
+// 哪个组件是进入的 哪个组件是离开的 哪个组件是更新的
+function extractChangeRecords(to, from) {
+  const leavingRecords = []
+  const updatingRecords = []
+  const enteringRecords = []
+
+  const len = Math.max(to.matched.length, from.matched.length)
+
+  for (let i = 0; i < len; i++) {
+    const recordFrom = from.matched[i] // 记录来的
+    if (recordFrom) {
+      // 如果to中有这个记录 就是更新的
+      if (to.matched.find(record => record.path === recordFrom.path)) {
+        updatingRecords.push(recordFrom)
+      }
+      else {
+        leavingRecords.push(recordFrom) // 如果to中没有这个记录 就是离开的
+      }
+    }
+
+    const recordTo = to.matched[i] // 记录去的
+    if (recordTo) {
+      // 如果from中有这个记录 就是更新的
+      if (from.matched.find(record => record.path === recordTo.path)) {
+        updatingRecords.push(recordTo)
+      }
+      else {
+        enteringRecords.push(recordTo) // 如果from中没有这个记录 就是进入的
+      }
+    }
+  }
+  return [leavingRecords, updatingRecords, enteringRecords]
+}
+
+function guardToPromise(guard, to, from, record) {
+  return () => new Promise((resolve) => {
+    const next = () => resolve()
+    const guardReturn = guard.call(record, to, from, next) // 调用钩子函数
+
+    // 如果不调用next 最终也会调用next
+    return Promise.resolve(guardReturn).then(next)
+  })
+}
+
+function extractComponentGuards(matched, guardType, to, from) {
+  const guards = []
+  for (const record of matched) {
+    const rawComponent = record.components.default // 获取组件
+    const guard = rawComponent[guardType] // 获取组件上的钩子
+
+    // 需要将钩子全部串联在一起
+    guard && guards.push(guardToPromise(guard, to, from, record)) // 将钩子转换为promise
+  }
+  return guards
+}
+
+// promise的组合函数
+function runGuardQueue(guards) {
+  return guards.reduce((promise, guard) => promise.then(() => guard()), Promise.resolve())
+}
+
 function createRouter(options) {
   const routerHistory = options.history
 
@@ -41,6 +114,10 @@ function createRouter(options) {
 
   // vue路由的核心 后续改变这个数据的value 就会触发页面的重新渲染
   const currentRoute = shallowRef(START_LOCATION_NORMALIZED)
+
+  const beforeGuards = useCallback()
+  const beforeResolveGuards = useCallback()
+  const afterGuards = useCallback()
 
   function resolve(to) {
     if (typeof to === 'string') {
@@ -74,12 +151,78 @@ function createRouter(options) {
     // 如果是初始化 还需要注入一个listen去更新currentRoute的值, 数据变化后可以重新渲染
   }
 
+  async function navigate(to, from) {
+    // 要知道哪个组件是进入的 哪个组件是离开的 哪个组件是更新的
+
+    const [leavingRecords, updatingRecords, enteringRecords] = extractChangeRecords(to, from)
+
+    // 抽离组件的钩子
+    let guards = extractComponentGuards(
+      leavingRecords.reverse(),
+      'beforeRouteLeave',
+      to,
+      from,
+    )
+
+    return runGuardQueue(guards)
+      .then(() => {
+        guards = []
+        for (const guard of beforeGuards.list()) {
+          guards.push(guardToPromise(guard, to, from, guard))
+        }
+        return runGuardQueue(guards)
+      })
+      .then(() => {
+        guards = extractChangeRecords(
+          updatingRecords,
+          'beforeRouteUpdate',
+          to,
+          from,
+        )
+      })
+      .then(() => {
+        guards = []
+        for (const record of to.matched) {
+          if (record.beforeEnter) {
+            guards.push(guardToPromise(record.beforeEnter, to, from, record))
+          }
+        }
+        return runGuardQueue(guards)
+      })
+      .then(() => {
+        guards = extractComponentGuards(
+          enteringRecords,
+          'beforeRouteEnter',
+          to,
+          from,
+        )
+        return runGuardQueue(guards)
+      })
+      .then(() => {
+        guards = []
+        for (const guard of beforeResolveGuards.list()) {
+          guards.push(guardToPromise(guard, to, from, guard))
+        }
+        return runGuardQueue(guards)
+      })
+  }
+
   function pushWithRedirect(to) {
     // 通过路径匹配到对应的路径
     const targetLocation = resolve(to)
     const from = currentRoute.value
 
-    finalizeNavigation(targetLocation, from)
+    // 路由的导航首位
+    // 全局守卫 路由守卫 组件守卫
+
+    navigate(targetLocation, from).then(() => {
+      return finalizeNavigation(targetLocation, from)
+    }).then(() => {
+      // 当导航切换完毕后执行afterEach
+      for (const guard of afterGuards.list()) {
+        guard(to, from.path)
+      }
+    })
     // console.log(targetLocation, from) // 根据是不是第一次来决定是push还是replace
   }
 
@@ -89,7 +232,9 @@ function createRouter(options) {
 
   const router = {
     push,
-    replace() {},
+    beforeEach: beforeGuards.add, // 可以注册多个 发布订阅模式
+    afterEach: afterGuards.add,
+    beforeResolve: beforeResolveGuards.add,
     install(app) {
       console.log('install router')
 

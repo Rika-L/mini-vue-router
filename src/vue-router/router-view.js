@@ -11,7 +11,6 @@ export const RouterView = {
 
     return () => {
       const matchedRoute = matchedRouteRef.value // record
-      console.log('matchedRoute', matchedRoute)
 
       const viewComponent = matchedRoute && matchedRoute.components.default
       if (!viewComponent) {
