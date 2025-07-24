@@ -143,4 +143,8 @@ export function createWebHistory(base = '') {
   })
 
   return routerHistory
+  // routerHistory.location 代表当前的路径
+  // routerHistory.state 代表当前的状态
+  // push replace 切换路径和状态
+  // listen 可以接受用户的一个回调 当用户前进后退时可以触发此方法
 }
