@@ -10,9 +10,9 @@ export const RouterView = {
     provide('depth', depth + 1)
 
     return () => {
-      const matchedRoute = matchedRouteRef.value.record // record
+      const matchedRoute = matchedRouteRef.value // record
+      console.log('matchedRoute', matchedRoute)
 
-      console.log(matchedRouteRef.value)
       const viewComponent = matchedRoute && matchedRoute.components.default
       if (!viewComponent) {
         return slots.default && slots.default()

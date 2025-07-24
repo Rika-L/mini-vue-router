@@ -54,7 +54,7 @@ export function createRouterMatcher(routes) {
     const path = location.path
     let matcher = matchers.find(m => m.path === path)
     while (matcher) {
-      matched.unshift(matcher) // 将匹配到的路径放在前面
+      matched.unshift(matcher.record) // 将匹配到的路径放在前面
       matcher = matcher.parent
     }
 

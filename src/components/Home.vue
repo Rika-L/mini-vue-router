@@ -9,4 +9,5 @@ export default {
 
 <template>
   home
+  <RouterView />
 </template>
