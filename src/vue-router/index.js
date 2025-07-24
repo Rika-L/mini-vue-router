@@ -173,7 +173,7 @@ function createRouter(options) {
         return runGuardQueue(guards)
       })
       .then(() => {
-        guards = extractChangeRecords(
+        guards = extractComponentGuards(
           updatingRecords,
           'beforeRouteUpdate',
           to,
